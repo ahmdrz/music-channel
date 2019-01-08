@@ -25,7 +25,7 @@ type Controller struct {
 
 func New(configFile string) (*Controller, error) {
 	log.Println("Creating controller ...")
-	
+
 	output := &Controller{}
 	output.queue = queue.New()
 
@@ -154,8 +154,8 @@ func (c *Controller) Run() error {
 
 		audio := &telebot.Audio{
 			File:      message.audioFile,
-			Caption:   "@dailyrock",
-			Performer: "@dailyrock",
+			Caption:   c.config.ChannelUsername,
+			Performer: c.config.ChannelUsername,
 		}
 		voice := &telebot.Voice{
 			File: telebot.FromDisk(message.outputPath),
