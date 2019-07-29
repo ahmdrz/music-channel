@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -12,30 +13,32 @@ import (
 	telebot "gopkg.in/tucnak/telebot.v2"
 
 	gcache "github.com/patrickmn/go-cache"
-
-	"github.com/ahmdrz/music-channel/application/config"
 )
 
 type Controller struct {
-	config  *config.Configuration
-	bot     *telebot.Bot
-	queue   *queue.Queue
-	tracker *gcache.Cache
+	administrators []int
+	bot            *telebot.Bot
+	queue          *queue.Queue
+	tracker        *gcache.Cache
 }
 
-func New(configFile string) (*Controller, error) {
+func New() (*Controller, error) {
 	log.Println("Creating controller ...")
 
 	output := &Controller{}
 	output.queue = queue.New()
 
-	configuration, err := config.Read(configFile)
-	if err != nil {
-		return nil, err
+	administrators := strings.Split(os.Getenv("ADMINISTRATORS"), ",")
+	output.administrators = make([]int, 0)
+	for _, admin := range administrators {
+		id, err := strconv.Atoi(admin)
+		if err != nil {
+			continue
+		}
+		output.administrators = append(output.administrators, id)
 	}
-	output.config = configuration
 
-	err = os.MkdirAll(configuration.TempDirectory, 0755)
+	err := os.MkdirAll("tmp", 0755)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +54,7 @@ func New(configFile string) (*Controller, error) {
 		}
 
 		isValidUser := false
-		for _, userID := range output.config.Administrators {
+		for _, userID := range output.administrators {
 			if userID == user.ID {
 				isValidUser = true
 				break
@@ -69,7 +72,7 @@ func New(configFile string) (*Controller, error) {
 	})
 
 	bot, err := telebot.NewBot(telebot.Settings{
-		Token:  configuration.Token,
+		Token:  os.Getenv("TOKEN"),
 		Poller: notAdminMiddleware,
 	})
 	if err != nil {
@@ -79,7 +82,7 @@ func New(configFile string) (*Controller, error) {
 
 	go output.queueHandler()
 
-	output.tracker = gcache.New(configuration.Tracker.Default*time.Second, configuration.Tracker.Interval*time.Second)
+	output.tracker = gcache.New(30*time.Second, 5*time.Second)
 
 	return output, nil
 }
@@ -110,8 +113,8 @@ func (c *Controller) Run() error {
 			c.bot.Edit(textMessage, "Could not download file !")
 			return
 		}
-		filePath := fmt.Sprintf("%s/%s.mp3", c.config.TempDirectory, audio.FileID)
-		outputPath := fmt.Sprintf("%s/%s.ogg", c.config.TempDirectory, audio.FileID)
+		filePath := fmt.Sprintf("tmp/%s.mp3", audio.FileID)
+		outputPath := fmt.Sprintf("tmp/%s.ogg", audio.FileID)
 
 		err = downloadFile(filePath, fileURL)
 		if err != nil {
@@ -154,8 +157,8 @@ func (c *Controller) Run() error {
 
 		audio := &telebot.Audio{
 			File:      message.audioFile,
-			Caption:   c.config.ChannelUsername,
-			Performer: c.config.ChannelUsername,
+			Caption:   os.Getenv("CHANNEL_ID"),
+			Performer: os.Getenv("CHANNEL_ID"),
 		}
 		voice := &telebot.Voice{
 			File: telebot.FromDisk(message.outputPath),
@@ -167,7 +170,7 @@ func (c *Controller) Run() error {
 		var chat telebot.Recipient = callback.Sender
 		if parts[1] == "channel" {
 			chat = &telebot.Chat{
-				Username: c.config.ChannelUsername,
+				Username: os.Getenv("CHANNEL_ID"),
 				Type:     telebot.ChatChannel,
 			}
 		}
